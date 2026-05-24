@@ -43,15 +43,18 @@ ROOT = Path(__file__).resolve().parents[1]
 SWEEPS_DIR = ROOT / "runs" / "sweeps"
 TRAINER = ROOT / "scripts" / "train_stand_stages.py"
 
-# Canonical stage-1 warm-start. Trained with:
-#   uv run scripts/train_stand_stages.py --algo ppo --stages 1 \
-#     --timesteps-per-stage 250000 --seed 1 \
-#     --out-dir runs/diag/v3_stage1_ppo_long --eval-freq 10000
-# Best checkpoint: ep_len=144 / max 300 under deterministic eval, return=461.7.
-# Beat SAC head-to-head on stability (no eval crashes) and matched peak.
-# LR decay in the trainer (--lr-schedule linear) is what enabled the long run
-# to keep improving instead of collapsing past 200k like the original config did.
-STAGE1_WARM_START = ROOT / "runs" / "diag" / "v3_stage1_ppo_long" / "stage_1_best" / "best_model.zip"
+# Canonical warm-start for stage-2/3 sweeps. Trained as a two-step curriculum:
+#   1. stage 1, 250k steps, PPO+LR-decay (10% gravity, no noise)
+#      -> runs/diag/v3_stage1_ppo_long/stage_1_best/best_model.zip
+#      reaches ep_len=144 / max 300 in its own regime.
+#   2. stage 2, 250k steps, warm-started from (1), default rewards
+#      -> runs/diag/v3_stage2_ppo_long/stage_2_best/best_model.zip
+#      reaches ep_len=21.4 / max 400 under full gravity. Climbs monotonically.
+#
+# We use the stage-2-trained checkpoint, not stage-1: the stage-1 best policy
+# does NOT transfer to full gravity (deterministic eval returns ep_len=12,
+# matching the no-op baseline). The stage-2 baseline is the real curriculum.
+STAGE1_WARM_START = ROOT / "runs" / "diag" / "v3_stage2_ppo_long" / "stage_2_best" / "best_model.zip"
 
 
 # ---------------------------------------------------------------------------
