@@ -205,7 +205,10 @@ class MatlasWalkEnv(Env):
                 np.abs(self.ctrl_low[self.controlled_actuator_ids]),
                 np.abs(self.ctrl_high[self.controlled_actuator_ids]),
             )
-            ctrl[self.controlled_actuator_ids] = limit * action
+            # action_scale bounds how much torque a unit-magnitude action can
+            # command. Without it, |action|=1 -> full actuator limit, which
+            # destabilizes the robot under high-entropy initial policies (SAC).
+            ctrl[self.controlled_actuator_ids] = self.config.action_scale * limit * action
             return np.clip(ctrl, self.ctrl_low, self.ctrl_high)
         if self.config.control_mode != "pd":
             raise ValueError(

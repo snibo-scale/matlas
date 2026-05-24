@@ -39,9 +39,17 @@ class StandEnvConfig(WalkEnvConfig):
     fall_penalty: float = 8.0
 
 
+# All stages share controlled_joints='all' (21 actuators) and control_mode='direct'
+# so a single PPO model can pass through the curriculum without
+# obs/action-space mismatches. The 50 Hz PD loop (control_dt=0.02, frame_skip=10)
+# is unstable from the nominal pose — even zero policy action drives qvel past
+# the max_qvel=40 termination in ~5 steps. Direct torque control sidesteps that
+# and is also closer to what the policy actually needs to learn.
+# The curriculum knobs are gravity_scale, reset_noise, episode_seconds, and
+# the termination tolerance (healthy_height, max_tilt_rad).
 STAND_STAGE_CONFIGS = {
     1: StandEnvConfig(
-        controlled_joints="legs",
+        controlled_joints="all",
         control_mode="direct",
         gravity_scale=0.1,
         reset_noise=0.0,
@@ -50,6 +58,8 @@ STAND_STAGE_CONFIGS = {
         max_tilt_rad=1.2,
     ),
     2: StandEnvConfig(
+        controlled_joints="all",
+        control_mode="direct",
         gravity_scale=1.0,
         reset_noise=0.002,
         episode_seconds=8.0,
@@ -57,6 +67,8 @@ STAND_STAGE_CONFIGS = {
         max_tilt_rad=0.85,
     ),
     3: StandEnvConfig(
+        controlled_joints="all",
+        control_mode="direct",
         gravity_scale=1.0,
         reset_noise=0.02,
         episode_seconds=10.0,

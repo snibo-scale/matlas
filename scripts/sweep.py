@@ -43,13 +43,15 @@ ROOT = Path(__file__).resolve().parents[1]
 SWEEPS_DIR = ROOT / "runs" / "sweeps"
 TRAINER = ROOT / "scripts" / "train_stand_stages.py"
 
-# Canonical stage-1 warm-start. Train once with:
-#   uv run scripts/train_stand_stages.py --stages 1 --timesteps-per-stage 250000 \
-#     --seed 1 --out-dir runs/diag/stage1_long --eval-freq 10000
-# Stage-1 PPO with default hyperparameters is unstable past ~200k steps and the
-# final checkpoint can land at a bad point in the oscillation. EvalCallback
-# already keeps the best-return checkpoint here, so warm-start from that.
-STAGE1_WARM_START = ROOT / "runs" / "diag" / "stage1_long" / "stage_1_best" / "best_model.zip"
+# Canonical stage-1 warm-start. Trained with:
+#   uv run scripts/train_stand_stages.py --algo ppo --stages 1 \
+#     --timesteps-per-stage 250000 --seed 1 \
+#     --out-dir runs/diag/v3_stage1_ppo_long --eval-freq 10000
+# Best checkpoint: ep_len=144 / max 300 under deterministic eval, return=461.7.
+# Beat SAC head-to-head on stability (no eval crashes) and matched peak.
+# LR decay in the trainer (--lr-schedule linear) is what enabled the long run
+# to keep improving instead of collapsing past 200k like the original config did.
+STAGE1_WARM_START = ROOT / "runs" / "diag" / "v3_stage1_ppo_long" / "stage_1_best" / "best_model.zip"
 
 
 # ---------------------------------------------------------------------------
@@ -69,9 +71,10 @@ class SweepSpec:
     metric_stage: int = 3
     eval_freq: int = 5_000
     eval_episodes: int = 5
-    # Optional path to a saved PPO model to warm-start every cell from.
+    # Optional path to a saved PPO/SAC model to warm-start every cell from.
     # The trainer's --load-model swaps in this checkpoint before stage training.
     warm_start: Path | None = None
+    algo: str = "ppo"  # "ppo" or "sac"
 
 
 # Map sweep-axis names to the CLI flags exposed by train_stand_stages.py.
@@ -225,6 +228,7 @@ def generate_cells(spec: SweepSpec) -> list[Cell]:
 def build_command(cell: Cell, spec: SweepSpec) -> list[str]:
     cmd = [
         "uv", "run", str(TRAINER.relative_to(ROOT)),
+        "--algo", spec.algo,
         "--stages", *[str(s) for s in cell.stages],
         "--timesteps-per-stage", str(spec.timesteps_per_stage),
         "--seed", str(cell.seed),
