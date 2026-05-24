@@ -15,12 +15,25 @@ LEG_TORQUE_LIMITS = {
 
 DEFAULT_TORQUE_LIMIT = 36.0
 
+ACTUATOR_GEAR_SIGNS = {
+    # Imported knee/elbow coordinates are opposite the desired positive motor
+    # convention for flexion. Encode that in the actuator transmission, not in
+    # policy/action code.
+    "knee": -1.0,
+    "elbow": -1.0,
+}
+
 
 def torque_limit(joint_name: str, profile: str = "default") -> float:
     if profile == "leg":
         base = joint_name.removesuffix("_1")
         return LEG_TORQUE_LIMITS.get(base, DEFAULT_TORQUE_LIMIT)
     return DEFAULT_TORQUE_LIMIT
+
+
+def actuator_gear_sign(joint_name: str) -> float:
+    base = joint_name.removesuffix("_1")
+    return ACTUATOR_GEAR_SIGNS.get(base, 1.0)
 
 
 def add_joint_actuators(
@@ -40,6 +53,7 @@ def add_joint_actuators(
         act = scene.add_actuator(name=actuator_name)
         act.trntype = mujoco.mjtTrn.mjTRN_JOINT
         act.target = target
+        act.gear[0] = actuator_gear_sign(joint_key)
         act.ctrlrange = [-limit, limit]
         act.forcelimited = True
         act.forcerange = [-limit, limit]

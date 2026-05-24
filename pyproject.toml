@@ -1,7 +1,16 @@
 [project]
-name = "mujoco"
+name = "matlas"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "mujoco>=3.8.1",
+    "numpy>=2.0",
+]
+
+[project.optional-dependencies]
+rl = [
+    "gymnasium>=1.0",
+    "stable-baselines3>=2.3",
+]

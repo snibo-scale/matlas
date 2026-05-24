@@ -58,3 +58,6 @@ MUJOCO_LOG.TXT
 
 # Logs
 *.log
+
+# Training artifacts
+runs/
