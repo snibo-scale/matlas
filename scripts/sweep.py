@@ -130,11 +130,21 @@ SWEEPS: dict[str, SweepSpec] = {
     ),
     "upright_shape": SweepSpec(
         name="upright_shape",
-        description="Sweep 3a — upright_weight on stage 2 (warm-started from stage 1).",
+        description="Sweep 3a — upright_weight on stage 2 (50k post-warm-start, fast).",
         axes={"upright_weight": [0.5, 1.0, 1.5, 2.5]},
         stages=[2],
         metric_stage=2,
         warm_start=STAGE1_WARM_START,
+    ),
+    "upright_shape_long": SweepSpec(
+        name="upright_shape_long",
+        description="Sweep 3a (extended) — 250k per cell. The 50k version showed all cells held the warm-start (~20.5 ep_len) — too short to differentiate.",
+        axes={"upright_weight": [0.5, 1.0, 1.5, 2.5]},
+        stages=[2],
+        metric_stage=2,
+        warm_start=STAGE1_WARM_START,
+        timesteps_per_stage=250_000,
+        eval_freq=10_000,
     ),
     "posture_stillness": SweepSpec(
         name="posture_stillness",
