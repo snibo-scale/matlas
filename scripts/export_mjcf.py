@@ -32,6 +32,8 @@ from components.system import INITIAL_HEIGHT, SystemBuilder
 OUT_DIR = ROOT / "models" / "matlas"
 OUT_XML = OUT_DIR / "matlas.xml"
 ASSET_DIR = OUT_DIR / "assets"
+NCONMAX = 4096
+NJMAX = 20000
 
 
 def build_robot_spec() -> mujoco.MjSpec:
@@ -87,11 +89,26 @@ def _clean_xml(xml: str) -> str:
     return xml
 
 
+def _ensure_size_limits(xml: str) -> str:
+    """Give contact-rich rollouts enough constraint storage.
+
+    MuJoCo's default dynamic sizing can still hit ``nefc overflow`` in batched
+    high-contact training. Keep this as an export-time patch because MjSpec does
+    not expose the <size> block in the Python API.
+    """
+    size = f'  <size nconmax="{NCONMAX}" njmax="{NJMAX}"/>'
+    if re.search(r"<size\b", xml):
+        xml = re.sub(r"\n\s*<size\b[^>]*/>", f"\n{size}", xml, count=1)
+    else:
+        xml = re.sub(r"(\n\s*<compiler\b[^>]*/>)", rf"\1\n{size}", xml, count=1)
+    return xml
+
+
 def export() -> Path:
     spec = build_robot_spec()
     _copy_meshes(spec, ASSET_DIR)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    xml = _clean_xml(spec.to_xml())
+    xml = _ensure_size_limits(_clean_xml(spec.to_xml()))
     OUT_XML.write_text(xml)
 
     # Round-trip to confirm the committed file is loadable on its own.
