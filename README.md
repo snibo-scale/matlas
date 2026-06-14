@@ -18,6 +18,52 @@ flexion. The policy commands joint torques directly.
 - `scripts/train.py` / `scripts/play.py` — thin wrappers that register the task then call mjlab's CLI.
 - `legacy/` — retired Gymnasium envs + stable-baselines3 scripts (kept for reference only).
 
+## Quick start
+
+Install [uv](https://docs.astral.sh/uv/) if needed, then from a fresh clone:
+
+```bash
+git clone https://github.com/snibo-scale/matlas.git
+cd matlas
+uv sync
+```
+
+The project targets Python 3.11+ and installs MuJoCo, MuJoCo-Warp/mjlab,
+RSL-RL support through mjlab, NumPy, and the small optimization stack used by
+the co-design search.
+
+### CPU / Mac smoke tests
+
+macOS and CPU-only machines are useful for authoring, XML checks, and short
+wiring tests:
+
+```bash
+uv run python -m compileall matlas scripts
+uv run python scripts/audit_collision_model.py
+uv run python scripts/view_pose.py --pose standing
+uv run python scripts/skill_torque_sweep.py Mjlab-Matlas-StandBalance \
+  --scales 0.8 1.0 \
+  --num-envs 2 \
+  --horizon 2 \
+  --device cpu
+```
+
+On macOS, MuJoCo viewer behavior can depend on Apple's main-thread rendering
+rules. If a viewer launch complains, run the same command through `mjpython`
+inside the uv environment.
+
+### CUDA training machine
+
+Real training expects an NVIDIA/CUDA machine because mjlab uses MuJoCo-Warp for
+parallel simulation. A typical run is:
+
+```bash
+uv run python scripts/train.py Mjlab-Matlas-StandBalance --env.scene.num-envs 4096
+```
+
+When training on a CPU-only machine, mjlab will construct and step the
+environment, but it will be too slow for serious learning.
+
 ## Regenerate the robot MJCF
 
 Run whenever the URDF assembly or actuator definitions change:
@@ -47,6 +93,58 @@ episode length, and termination tolerances:
 
 Warm-start a later stage from an earlier run with RSL-RL's `--agent.resume` /
 `--agent.load-run` flags.
+
+## Skill curriculum
+
+The actuator-characterization curriculum is in `matlas/tasks/skills/`:
+
+1. `Mjlab-Matlas-StandBalance`
+2. `Mjlab-Matlas-Squat`
+3. `Mjlab-Matlas-LoadedSquat`
+4. `Mjlab-Matlas-SingleStep`
+5. `Mjlab-Matlas-StairStep`
+6. `Mjlab-Matlas-JumpForward`
+7. `Mjlab-Matlas-BackFlip`
+
+Train each stage in order and warm-start from the previous checkpoint:
+
+```bash
+uv run python scripts/train.py Mjlab-Matlas-Squat --env.scene.num-envs 4096
+
+uv run python scripts/train.py Mjlab-Matlas-LoadedSquat \
+  --agent.resume true \
+  --agent.load-run <previous-run>
+```
+
+The skill tasks randomize actuator envelopes per environment. The policy sees
+`[torque_scale, velocity_scale, continuous_torque_fraction]`, while reward terms
+penalize torque saturation, continuous-torque excess, over-speed, and a soft
+linear torque-speed envelope violation.
+
+Default exploration torque scales:
+
+| Task | Torque scale range |
+| --- | --- |
+| `StandBalance` | `0.8x-1.2x` |
+| `Squat` | `1.0x-1.4x` |
+| `LoadedSquat` | `1.0x-1.5x` |
+| `SingleStep` | `1.0x-1.5x` |
+| `StairStep` | `1.1x-1.6x` |
+| `JumpForward` | `1.3x-2.0x` |
+| `BackFlip` | `1.5x-2.5x` |
+
+After training, sweep fixed limits to find the feasibility threshold:
+
+```bash
+uv run python scripts/skill_torque_sweep.py Mjlab-Matlas-JumpForward \
+  --checkpoint logs/rsl_rl/matlas_jump_forward/<run>/model_<n>.pt \
+  --scales 0.6 0.7 0.8 0.9 1.0 1.2 1.5 2.0 \
+  --num-envs 128 \
+  --out runs/skill_sweeps/jump_forward.json
+```
+
+The sweep reports survival, success, positive mechanical power, saturation
+fraction, speed violation, and torque-speed violation.
 
 ## Play
 
