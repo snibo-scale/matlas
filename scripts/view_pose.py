@@ -16,7 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from components.full_assembly import build_full_assembly
-from envs.poses import POSES, named_pose_qpos
+from components.poses import POSES, named_pose_qpos
 
 
 def main() -> None:

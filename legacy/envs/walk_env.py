@@ -9,7 +9,7 @@ import mujoco
 import numpy as np
 
 from components.full_assembly import build_full_assembly
-from envs.poses import named_pose_qpos
+from components.poses import named_pose_qpos
 
 
 try:
