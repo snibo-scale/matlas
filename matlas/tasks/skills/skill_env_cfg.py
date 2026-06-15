@@ -144,6 +144,10 @@ SKILL_TASKS: dict[str, SkillTaskCfg] = {
         max_tilt_rad=0.75,
         rewards=_task_rewards(
             (
+                "upright",
+                RewardTermCfg(func=skill_mdp.upright, weight=1.2),
+            ),
+            (
                 "height",
                 RewardTermCfg(
                     func=skill_mdp.height_schedule,

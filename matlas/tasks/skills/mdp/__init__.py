@@ -18,6 +18,7 @@ from matlas.tasks.skills.mdp.rewards import (
     posture_tracking,
     task_complete,
     torque_cost,
+    upright,
     velocity_tracking,
 )
 from matlas.tasks.skills.mdp.terminations import (
@@ -45,5 +46,6 @@ __all__ = [
     "task_phase",
     "torque_cost",
     "torque_speed_violation_cost",
+    "upright",
     "velocity_tracking",
 ]

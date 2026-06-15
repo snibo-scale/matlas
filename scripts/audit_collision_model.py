@@ -11,11 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from components.full_assembly import build_full_assembly
+from matlas.robots.matlas_constants import MATLAS_XML
 
 
 def main() -> None:
-    model = build_full_assembly()
+    model = mujoco.MjModel.from_xml_path(str(MATLAS_XML))
     robot_geoms = [
         geom_id
         for geom_id in range(model.ngeom)
@@ -24,9 +24,14 @@ def main() -> None:
         )
         != "world"
     ]
-    mesh_geoms = [
+    collision_geoms = [
         geom_id
         for geom_id in robot_geoms
+        if model.geom_contype[geom_id] != 0 and model.geom_conaffinity[geom_id] != 0
+    ]
+    mesh_collision_geoms = [
+        geom_id
+        for geom_id in collision_geoms
         if model.geom_type[geom_id] == mujoco.mjtGeom.mjGEOM_MESH
     ]
     disabled_contact_geoms = [
@@ -36,16 +41,17 @@ def main() -> None:
     ]
 
     print(f"robot_geoms={len(robot_geoms)}")
-    print(f"mesh_collision_geoms={len(mesh_geoms)}")
+    print(f"active_collision_geoms={len(collision_geoms)}")
+    print(f"mesh_collision_geoms={len(mesh_collision_geoms)}")
     print(f"disabled_contact_geoms={len(disabled_contact_geoms)}")
     print(f"explicit_collision_pairs={model.npair}")
     print(f"explicit_excludes={model.nexclude}")
     print(f"contact_disableflag={bool(model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_CONTACT)}")
 
-    if len(mesh_geoms) != len(robot_geoms):
-        raise SystemExit("Not every robot geom is a mesh collision geom.")
-    if disabled_contact_geoms:
-        raise SystemExit("Some robot geoms have contact disabled.")
+    if mesh_collision_geoms:
+        raise SystemExit("Some active collision geoms are still mesh geoms.")
+    if len(collision_geoms) != 2:
+        raise SystemExit("Expected two primitive foot collision geoms.")
     if model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_CONTACT:
         raise SystemExit("Global contacts are disabled.")
 

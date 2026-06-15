@@ -72,6 +72,13 @@ def posture_tracking(
     return torch.exp(-2.5 * torch.mean(err**2, dim=1))
 
 
+def upright(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _ROBOT) -> torch.Tensor:
+    """Reward the root body z-axis staying aligned with world up."""
+    asset = _asset(env, asset_cfg)
+    root_up_dot_world_up = -asset.data.projected_gravity_b[:, 2]
+    return torch.exp(4.0 * (root_up_dot_world_up - 1.0))
+
+
 def velocity_tracking(
     env: ManagerBasedRlEnv,
     target_vx: float,
@@ -169,4 +176,3 @@ def torque_cost(env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _ROBOT) -> t
     asset = _asset(env, asset_cfg)
     normalized = asset.data.actuator_force / _effort_limits(env, asset).clamp_min(1e-6)
     return torch.mean(normalized**2, dim=1)
-

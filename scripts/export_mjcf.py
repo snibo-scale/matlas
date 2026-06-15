@@ -35,6 +35,11 @@ ASSET_DIR = OUT_DIR / "assets"
 NCONMAX = 4096
 NJMAX = 20000
 
+FOOT_COLLISION_GEOMS: dict[str, str] = {
+    "foot_1": '                          <geom name="foot_1_collision" type="box" pos="0 -0.002 -0.009" size="0.05 0.04 0.018" rgba="0.1 0.8 0.1 0.25" condim="3" friction="1.0 0.005 0.0001"/>',
+    "foot": '                          <geom name="foot_collision" type="box" pos="0 -0.002 -0.009" size="0.05 0.04 0.018" rgba="0.1 0.8 0.1 0.25" condim="3" friction="1.0 0.005 0.0001"/>',
+}
+
 
 def build_robot_spec() -> mujoco.MjSpec:
     """Assemble the full robot (no floor) with torque motors in the spec."""
@@ -104,11 +109,48 @@ def _ensure_size_limits(xml: str) -> str:
     return xml
 
 
+def _disable_visual_mesh_collision(xml: str) -> str:
+    """Make CAD mesh geoms visual-only.
+
+    Mesh-vs-plane contact can generate many contact candidates and is the main
+    source of ``nefc overflow`` during falls, jumps, and batched training.
+    """
+    lines: list[str] = []
+    for line in xml.splitlines():
+        if "<geom " in line and ' type="mesh"' in line:
+            line = line.replace("/>", ' contype="0" conaffinity="0" group="2"/>')
+        lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
+def _add_simple_collision_geoms(xml: str) -> str:
+    """Add primitive foot contact geoms after the visual foot meshes."""
+    for body_name, collision_line in FOOT_COLLISION_GEOMS.items():
+        if f'name="{body_name}_collision"' in xml:
+            continue
+        body_pattern = (
+            rf'(<body name="{re.escape(body_name)}"[^>]*>\n'
+            rf'\s*<inertial\b[^\n]*/>\n)'
+            rf'(?P<joint>\s*<joint\b[^\n]*/>\n)?'
+            rf'(?P<mesh>\s*<geom\b[^\n]*type="mesh"[^\n]*/>)'
+        )
+
+        def repl(match: re.Match[str]) -> str:
+            joint = match.group("joint") or ""
+            return f"{match.group(1)}{joint}{match.group('mesh')}\n{collision_line}"
+
+        xml = re.sub(body_pattern, repl, xml, count=1)
+    return xml
+
+
 def export() -> Path:
     spec = build_robot_spec()
     _copy_meshes(spec, ASSET_DIR)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    xml = _ensure_size_limits(_clean_xml(spec.to_xml()))
+    xml = _clean_xml(spec.to_xml())
+    xml = _ensure_size_limits(xml)
+    xml = _disable_visual_mesh_collision(xml)
+    xml = _add_simple_collision_geoms(xml)
     OUT_XML.write_text(xml)
 
     # Round-trip to confirm the committed file is loadable on its own.
