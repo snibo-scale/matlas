@@ -24,14 +24,20 @@ def main() -> None:
         )
         != "world"
     ]
-    collision_geoms = [
+    terrain_collision_geoms = [
         geom_id
         for geom_id in robot_geoms
-        if model.geom_contype[geom_id] != 0 and model.geom_conaffinity[geom_id] != 0
+        if model.geom_conaffinity[geom_id] != 0
+    ]
+    visual_mesh_geoms = [
+        geom_id
+        for geom_id in robot_geoms
+        if model.geom_type[geom_id] == mujoco.mjtGeom.mjGEOM_MESH
+        and (model.geom_contype[geom_id] == 0 and model.geom_conaffinity[geom_id] == 0)
     ]
     mesh_collision_geoms = [
         geom_id
-        for geom_id in collision_geoms
+        for geom_id in terrain_collision_geoms
         if model.geom_type[geom_id] == mujoco.mjtGeom.mjGEOM_MESH
     ]
     disabled_contact_geoms = [
@@ -41,17 +47,18 @@ def main() -> None:
     ]
 
     print(f"robot_geoms={len(robot_geoms)}")
-    print(f"active_collision_geoms={len(collision_geoms)}")
+    print(f"terrain_collision_geoms={len(terrain_collision_geoms)}")
+    print(f"visual_mesh_geoms={len(visual_mesh_geoms)}")
     print(f"mesh_collision_geoms={len(mesh_collision_geoms)}")
     print(f"disabled_contact_geoms={len(disabled_contact_geoms)}")
     print(f"explicit_collision_pairs={model.npair}")
     print(f"explicit_excludes={model.nexclude}")
     print(f"contact_disableflag={bool(model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_CONTACT)}")
 
-    if mesh_collision_geoms:
-        raise SystemExit("Some active collision geoms are still mesh geoms.")
-    if len(collision_geoms) != 2:
-        raise SystemExit("Expected two primitive foot collision geoms.")
+    if len(mesh_collision_geoms) != len(visual_mesh_geoms):
+        raise SystemExit("Expected one simplified collision mesh per visual mesh.")
+    if any(model.geom_contype[g] != 0 for g in terrain_collision_geoms):
+        raise SystemExit("Robot collision geoms should not self-collide; expected contype=0.")
     if model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_CONTACT:
         raise SystemExit("Global contacts are disabled.")
 

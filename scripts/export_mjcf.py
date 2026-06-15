@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 import mujoco
+import trimesh
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -34,11 +35,7 @@ OUT_XML = OUT_DIR / "matlas.xml"
 ASSET_DIR = OUT_DIR / "assets"
 NCONMAX = 4096
 NJMAX = 20000
-
-FOOT_COLLISION_GEOMS: dict[str, str] = {
-    "foot_1": '                          <geom name="foot_1_collision" type="box" pos="0 -0.002 -0.009" size="0.05 0.04 0.018" rgba="0.1 0.8 0.1 0.25" condim="3" friction="1.0 0.005 0.0001"/>',
-    "foot": '                          <geom name="foot_collision" type="box" pos="0 -0.002 -0.009" size="0.05 0.04 0.018" rgba="0.1 0.8 0.1 0.25" condim="3" friction="1.0 0.005 0.0001"/>',
-}
+COLLISION_SUFFIX = "_collision"
 
 
 def build_robot_spec() -> mujoco.MjSpec:
@@ -83,6 +80,24 @@ def _copy_meshes(spec: mujoco.MjSpec, asset_dir: Path) -> None:
     spec.compiler.meshdir = asset_dir.name
 
 
+def _write_simplified_collision_meshes(asset_dir: Path) -> dict[str, str]:
+    """Create convex-hull STL collision meshes for every visual mesh.
+
+    The collision meshes preserve each STL's local coordinate frame, so collision
+    geoms can reuse the same pos/quat as their visual mesh counterparts.
+    """
+    collision_files: dict[str, str] = {}
+    for src in sorted(asset_dir.glob("*.stl")):
+        if src.stem.endswith(COLLISION_SUFFIX):
+            continue
+        mesh = trimesh.load_mesh(src, force="mesh", process=True)
+        hull = mesh.convex_hull
+        out_name = f"{src.stem}{COLLISION_SUFFIX}.stl"
+        hull.export(asset_dir / out_name)
+        collision_files[src.stem] = out_name
+    return collision_files
+
+
 def _clean_xml(xml: str) -> str:
     """Drop empty default classes that MjSpec.to_xml emits from the URDF import.
 
@@ -109,48 +124,52 @@ def _ensure_size_limits(xml: str) -> str:
     return xml
 
 
-def _disable_visual_mesh_collision(xml: str) -> str:
-    """Make CAD mesh geoms visual-only.
+def _add_collision_mesh_assets(xml: str, collision_files: dict[str, str]) -> str:
+    """Add simplified collision mesh assets next to visual mesh assets."""
+    for mesh_name, file_name in collision_files.items():
+        collision_name = f"{mesh_name}{COLLISION_SUFFIX}"
+        if f'<mesh name="{collision_name}"' in xml:
+            continue
+        pattern = rf'(\n\s*<mesh name="{re.escape(mesh_name)}" file="[^"]+"/>)'
+        replacement = rf'\1\n    <mesh name="{collision_name}" file="{file_name}"/>'
+        xml = re.sub(pattern, replacement, xml, count=1)
+    return xml
 
-    Mesh-vs-plane contact can generate many contact candidates and is the main
-    source of ``nefc overflow`` during falls, jumps, and batched training.
+
+def _split_visual_and_collision_mesh_geoms(xml: str) -> str:
+    """Keep original STL meshes visual-only and add simplified STL collisions.
+
+    ``contype=0, conaffinity=1`` lets these robot geoms collide with the default
+    terrain (which has contype=1) but not with each other, avoiding robot
+    self-collision contact storms.
     """
     lines: list[str] = []
     for line in xml.splitlines():
         if "<geom " in line and ' type="mesh"' in line:
-            line = line.replace("/>", ' contype="0" conaffinity="0" group="2"/>')
+            visual = line.replace("/>", ' contype="0" conaffinity="0" group="2"/>')
+            collision = re.sub(
+                r'mesh="([^"]+)"',
+                rf'mesh="\1{COLLISION_SUFFIX}"',
+                line,
+            )
+            collision = re.sub(r'\srgba="[^"]+"', "", collision)
+            collision = collision.replace("/>", ' rgba="0.1 0.8 0.1 0.22" contype="0" conaffinity="1" group="3" condim="3" friction="1.0 0.005 0.0001"/>')
+            lines.append(visual)
+            lines.append(collision)
+            continue
         lines.append(line)
     return "\n".join(lines) + "\n"
-
-
-def _add_simple_collision_geoms(xml: str) -> str:
-    """Add primitive foot contact geoms after the visual foot meshes."""
-    for body_name, collision_line in FOOT_COLLISION_GEOMS.items():
-        if f'name="{body_name}_collision"' in xml:
-            continue
-        body_pattern = (
-            rf'(<body name="{re.escape(body_name)}"[^>]*>\n'
-            rf'\s*<inertial\b[^\n]*/>\n)'
-            rf'(?P<joint>\s*<joint\b[^\n]*/>\n)?'
-            rf'(?P<mesh>\s*<geom\b[^\n]*type="mesh"[^\n]*/>)'
-        )
-
-        def repl(match: re.Match[str]) -> str:
-            joint = match.group("joint") or ""
-            return f"{match.group(1)}{joint}{match.group('mesh')}\n{collision_line}"
-
-        xml = re.sub(body_pattern, repl, xml, count=1)
-    return xml
 
 
 def export() -> Path:
     spec = build_robot_spec()
     _copy_meshes(spec, ASSET_DIR)
+    collision_files = _write_simplified_collision_meshes(ASSET_DIR)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     xml = _clean_xml(spec.to_xml())
     xml = _ensure_size_limits(xml)
-    xml = _disable_visual_mesh_collision(xml)
-    xml = _add_simple_collision_geoms(xml)
+    xml = _add_collision_mesh_assets(xml, collision_files)
+    xml = _split_visual_and_collision_mesh_geoms(xml)
     OUT_XML.write_text(xml)
 
     # Round-trip to confirm the committed file is loadable on its own.
